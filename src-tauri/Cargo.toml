@@ -1,0 +1,17 @@
+[package]
+name = "atjson"
+version = "0.1.0-alpha.0"
+description = "JSON 格式化、查询、对比与转换桌面工具"
+authors = ["Attson"]
+edition = "2021"
+
+[lib]
+name = "atjson_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.2", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.3", features = [] }
+
