@@ -10,7 +10,7 @@ importers:
     dependencies:
       '@attson/plugin-sdk':
         specifier: github:attsontools/attool-plugin-sdk#v0.1.0-alpha.0
-        version: git+https://git@github.com:attsontools/attool-plugin-sdk.git#7965974ff49c285e49a18456d5c555a52ba0b8ba
+        version: https://codeload.github.com/attsontools/attool-plugin-sdk/tar.gz/7965974ff49c285e49a18456d5c555a52ba0b8ba
       '@iarna/toml':
         specifier: 2.2.5
         version: 2.2.5
@@ -60,8 +60,8 @@ importers:
 
 packages:
 
-  '@attson/plugin-sdk@git+https://git@github.com:attsontools/attool-plugin-sdk.git#7965974ff49c285e49a18456d5c555a52ba0b8ba':
-    resolution: {commit: 7965974ff49c285e49a18456d5c555a52ba0b8ba, repo: git@github.com:attsontools/attool-plugin-sdk.git, type: git}
+  '@attson/plugin-sdk@https://codeload.github.com/attsontools/attool-plugin-sdk/tar.gz/7965974ff49c285e49a18456d5c555a52ba0b8ba':
+    resolution: {tarball: https://codeload.github.com/attsontools/attool-plugin-sdk/tar.gz/7965974ff49c285e49a18456d5c555a52ba0b8ba}
     version: 0.1.0-alpha.0
     engines: {node: '>=22.6'}
 
@@ -954,7 +954,7 @@ packages:
 
 snapshots:
 
-  '@attson/plugin-sdk@git+https://git@github.com:attsontools/attool-plugin-sdk.git#7965974ff49c285e49a18456d5c555a52ba0b8ba': {}
+  '@attson/plugin-sdk@https://codeload.github.com/attsontools/attool-plugin-sdk/tar.gz/7965974ff49c285e49a18456d5c555a52ba0b8ba': {}
 
   '@babel/helper-string-parser@7.29.14': {}
 
