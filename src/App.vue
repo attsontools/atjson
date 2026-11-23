@@ -44,8 +44,8 @@ async function toggleTheme() {
 
 <template>
   <n-config-provider :theme="naiveTheme" :theme-overrides="naiveOverrides">
-    <main class="app-shell">
-      <header class="app-header">
+    <main class="app-shell" :class="{ 'is-plugin': host.mode === 'plugin' }">
+      <header v-if="host.mode === 'standalone'" class="app-header">
         <div class="brand">
           <span class="brand-mark">{ }</span>
           <div class="brand-copy">
@@ -54,9 +54,8 @@ async function toggleTheme() {
           </div>
         </div>
         <div class="top-actions">
-          <span class="host-badge">{{ host.mode === 'plugin' ? '平台插件' : '独立应用' }}</span>
+          <span class="host-badge">独立应用</span>
           <button
-            v-if="host.mode === 'standalone'"
             type="button"
             class="theme-button"
             :title="theme === 'dark' ? '切换到浅色' : '切换到深色'"
