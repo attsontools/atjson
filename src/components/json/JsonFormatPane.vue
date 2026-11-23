@@ -21,6 +21,7 @@ const elapsedMs = ref(0);
 const parsed = shallowRef<JsonValue | null>(null);
 const hasParsed = ref(false);
 const treeRef = ref<{ expandAll: () => void; collapseAll: () => void } | null>(null);
+const editorRef = ref<{ undo: () => void; redo: () => void } | null>(null);
 const selectedTreeKey = ref<string | null>(null);
 let parsedSource: string | null = null;
 let textRevision = 0;
@@ -183,7 +184,13 @@ onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer)
       <n-button size="small" @click="drop.openFile">打开文件</n-button>
     </div>
     <div class="split">
-      <CodeEditor :model-value="text" language="json" @update:model-value="setText" height="100%" />
+      <CodeEditor
+        ref="editorRef"
+        :model-value="text"
+        language="json"
+        height="100%"
+        @update:model-value="setText"
+      />
       <div class="tree-pane">
         <JsonTreeView
           v-if="hasParsed"
@@ -192,6 +199,8 @@ onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer)
           :value="parsed"
           @copy-path="copyTreePath"
           @delete-node="deleteTreeNode"
+          @undo="editorRef?.undo()"
+          @redo="editorRef?.redo()"
         />
         <div v-else class="empty">{{ text.trim() ? '等待有效 JSON' : '左侧粘贴 / 拖入 JSON 文本' }}</div>
       </div>

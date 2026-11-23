@@ -4,6 +4,7 @@ import { loadMonaco } from '../../composables/useMonacoLoader';
 import type { editor as MonacoEditor } from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { watchMonacoTheme, type MonacoThemeName } from '../../theme/monacoTheme';
 import { handlePlainTextPaste } from '../../utils/editorPaste';
+import { replaceEditorValue } from '../../utils/editorHistory';
 
 const LARGE_INPUT = 1_000_000;
 const LONG_LINE = 50_000;
@@ -85,6 +86,16 @@ function onPaste(event: ClipboardEvent) {
   });
 }
 
+function undo() {
+  instance.value?.trigger('keyboard', 'undo', null);
+}
+
+function redo() {
+  instance.value?.trigger('keyboard', 'redo', null);
+}
+
+defineExpose({ undo, redo });
+
 onMounted(async () => {
   if (!container.value) return;
   pasteContainer = container.value;
@@ -132,8 +143,11 @@ watch(
     editor.updateOptions(resolveLargeOptions(next));
     lastResolvedLen = next.length;
     suppress = true;
-    editor.setValue(next);
-    suppress = false;
+    try {
+      replaceEditorValue(editor, next, !props.readonly);
+    } finally {
+      suppress = false;
+    }
   },
 );
 

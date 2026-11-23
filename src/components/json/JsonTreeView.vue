@@ -3,6 +3,7 @@ import { computed, ref, shallowRef, watch } from 'vue';
 import { NVirtualList } from 'naive-ui';
 import type { JsonPathSegment, JsonValue } from '../../types/json';
 import { flatten, allExpandableKeys, type FlatNode } from '../../utils/jsonTreeFlatten';
+import { resolveEditorHistoryShortcut } from '../../utils/editorHistory';
 
 const props = defineProps<{
   value: JsonValue;
@@ -13,6 +14,8 @@ const emit = defineEmits<{
   copyPath: [path: string, restoreFocus: () => void];
   'update:selectedKey': [key: string];
   deleteNode: [path: JsonPathSegment[], parentKey: string];
+  undo: [];
+  redo: [];
 }>();
 
 const openKeys = ref<Set<string>>(new Set(['$']));
@@ -52,6 +55,14 @@ function selectNode(node: FlatNode) {
 }
 
 function onKeydown(event: KeyboardEvent) {
+  const historyAction = resolveEditorHistoryShortcut(event);
+  if (historyAction) {
+    event.preventDefault();
+    event.stopPropagation();
+    emit(historyAction);
+    return;
+  }
+
   if (event.key !== 'Delete' || !props.selectedKey) return;
   const node = nodes.value.find((item) => item.key === props.selectedKey);
   if (!node?.parentKey) return;
