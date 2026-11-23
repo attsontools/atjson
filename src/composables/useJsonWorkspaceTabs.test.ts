@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { useJsonWorkspaceTabs } from './useJsonWorkspaceTabs';
+import { hasWorkspaceInput, useJsonWorkspaceTabs } from './useJsonWorkspaceTabs';
+
+describe('hasWorkspaceInput', () => {
+  it('treats whitespace-only text as unsaved user input', () => {
+    expect(hasWorkspaceInput('')).toBe(false);
+    expect(hasWorkspaceInput('', '')).toBe(false);
+    expect(hasWorkspaceInput('   ')).toBe(true);
+    expect(hasWorkspaceInput('', '\n')).toBe(true);
+  });
+});
 
 describe('useJsonWorkspaceTabs', () => {
   it('starts with JSON 1 active', () => {
     const workspaces = useJsonWorkspaceTabs();
 
     expect(workspaces.tabs.value).toEqual([
-      { id: 'json-workspace-1', title: 'JSON 1' },
+      { id: 'json-workspace-1', title: 'JSON 1', dirty: false },
     ]);
     expect(workspaces.activeTabId.value).toBe('json-workspace-1');
   });
@@ -36,6 +45,25 @@ describe('useJsonWorkspaceTabs', () => {
     expect(workspaces.activeTabId.value).toBe('json-workspace-1');
   });
 
+  it('tracks whether a workspace contains unsaved input', () => {
+    const workspaces = useJsonWorkspaceTabs();
+
+    expect(workspaces.setDirty('json-workspace-1', true)).toBe(true);
+    expect(workspaces.tabs.value[0].dirty).toBe(true);
+
+    expect(workspaces.setDirty('missing', true)).toBe(false);
+  });
+
+  it('renames an existing workspace with a non-empty trimmed title', () => {
+    const workspaces = useJsonWorkspaceTabs();
+
+    expect(workspaces.renameTab('json-workspace-1', '  order.json  ')).toBe(true);
+    expect(workspaces.tabs.value[0].title).toBe('order.json');
+    expect(workspaces.renameTab('json-workspace-1', '   ')).toBe(false);
+    expect(workspaces.renameTab('missing', 'other.json')).toBe(false);
+    expect(workspaces.tabs.value[0].title).toBe('order.json');
+  });
+
   it('closes an inactive workspace without changing the active one', () => {
     const workspaces = useJsonWorkspaceTabs();
     workspaces.newTab();
@@ -44,6 +72,19 @@ describe('useJsonWorkspaceTabs', () => {
 
     expect(workspaces.tabs.value.map((tab) => tab.id)).toEqual(['json-workspace-2']);
     expect(workspaces.activeTabId.value).toBe('json-workspace-2');
+  });
+
+  it('requires confirmation before closing a dirty workspace', () => {
+    const workspaces = useJsonWorkspaceTabs();
+    workspaces.setDirty('json-workspace-1', true);
+
+    expect(workspaces.closeTab('json-workspace-1')).toBe('needs-confirmation');
+    expect(workspaces.tabs.value).toHaveLength(1);
+
+    expect(workspaces.closeTab('json-workspace-1', true)).toBe('closed');
+    expect(workspaces.tabs.value).toEqual([
+      { id: 'json-workspace-2', title: 'JSON 2', dirty: false },
+    ]);
   });
 
   it('selects the right neighbor then the left when closing active workspaces', () => {
@@ -65,7 +106,7 @@ describe('useJsonWorkspaceTabs', () => {
     workspaces.closeTab('json-workspace-1');
 
     expect(workspaces.tabs.value).toEqual([
-      { id: 'json-workspace-2', title: 'JSON 2' },
+      { id: 'json-workspace-2', title: 'JSON 2', dirty: false },
     ]);
     expect(workspaces.activeTabId.value).toBe('json-workspace-2');
   });
@@ -76,7 +117,7 @@ describe('useJsonWorkspaceTabs', () => {
     workspaces.closeTab('missing');
 
     expect(workspaces.tabs.value).toEqual([
-      { id: 'json-workspace-1', title: 'JSON 1' },
+      { id: 'json-workspace-1', title: 'JSON 1', dirty: false },
     ]);
     expect(workspaces.activeTabId.value).toBe('json-workspace-1');
   });

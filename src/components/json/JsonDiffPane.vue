@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { NSwitch } from 'naive-ui';
 import CodeEditor from './CodeEditor.vue';
 import JsonDiffViewer from './JsonDiffViewer.vue';
 import { useJsonWorker } from '../../composables/useJsonWorker';
+import { hasWorkspaceInput } from '../../composables/useJsonWorkspaceTabs';
+import { useJsonHost } from '../../host/context';
+import { downloadText } from '../../utils/textDownload';
+
+const props = defineProps<{ workspaceTitle: string }>();
+const emit = defineEmits<{ dirtyChange: [dirty: boolean] }>();
 
 const worker = useJsonWorker();
+const host = useJsonHost();
 
 const left = ref('');
 const right = ref('');
@@ -18,9 +25,12 @@ const changeCount = ref(0);
 const elapsedMs = ref(0);
 const resultLeft = ref('');
 const resultRight = ref('');
+const reportText = ref('');
+const actionMessage = ref('');
 const keyOnly = ref(false);
 const parseNestedJsonStrings = ref(false);
 let compareRun = 0;
+let actionTimer: number | null = null;
 
 async function compare() {
   if (!left.value.trim() && !right.value.trim()) {
@@ -55,6 +65,7 @@ async function compare() {
     elapsedMs.value = res.elapsedMs;
     resultLeft.value = res.leftText;
     resultRight.value = res.rightText;
+    reportText.value = res.reportText;
     viewMode.value = 'result';
   } catch (compareError) {
     if (run !== compareRun) return;
@@ -72,15 +83,59 @@ function backToInput() {
 
 function setLeft(value: string) {
   left.value = value;
+  emitDirty();
   compareRun++;
   comparing.value = false;
 }
 
 function setRight(value: string) {
   right.value = value;
+  emitDirty();
   compareRun++;
   comparing.value = false;
 }
+
+function emitDirty() {
+  emit('dirtyChange', hasWorkspaceInput(left.value, right.value));
+}
+
+async function copyReport() {
+  if (!reportText.value) return;
+  try {
+    await host.copy(reportText.value);
+    showActionMessage('已复制对比报告');
+  } catch (copyError) {
+    leftError.value = copyError instanceof Error ? copyError.message : String(copyError);
+  }
+}
+
+function saveReport() {
+  if (!reportText.value) return;
+  try {
+    const filename = downloadText(
+      reportText.value,
+      `${props.workspaceTitle}-diff`,
+      'json',
+      'application/json',
+    );
+    showActionMessage(`已生成 ${filename}`);
+  } catch (saveError) {
+    leftError.value = saveError instanceof Error ? saveError.message : String(saveError);
+  }
+}
+
+function showActionMessage(message: string) {
+  actionMessage.value = message;
+  if (actionTimer !== null) window.clearTimeout(actionTimer);
+  actionTimer = window.setTimeout(() => {
+    actionMessage.value = '';
+    actionTimer = null;
+  }, 1800);
+}
+
+onBeforeUnmount(() => {
+  if (actionTimer !== null) window.clearTimeout(actionTimer);
+});
 
 function setKeyOnly(value: boolean) {
   keyOnly.value = value;
@@ -174,6 +229,11 @@ const resultStatus = computed(() => {
             />
           </label>
         </div>
+        <div class="result-actions">
+          <button type="button" class="secondary-btn" :disabled="!reportText" @click="copyReport">复制报告</button>
+          <button type="button" class="secondary-btn" :disabled="!reportText" @click="saveReport">另存为</button>
+          <span v-if="actionMessage" class="action-message">{{ actionMessage }}</span>
+        </div>
         <button type="button" class="secondary-btn" @click="backToInput">重新编辑</button>
       </div>
       <JsonDiffViewer :original="resultLeft" :modified="resultRight" height="100%" />
@@ -205,6 +265,7 @@ const resultStatus = computed(() => {
 .result-title span { color: var(--text-muted); font-size: var(--fs-xs); }
 .status { flex: 1 1 180px; }
 .footer-actions,
+.result-actions,
 .diff-options,
 .diff-option {
   display: flex;
@@ -215,6 +276,8 @@ const resultStatus = computed(() => {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+.result-actions { gap: 6px; }
+.action-message { color: var(--success); font-size: var(--fs-xxs); white-space: nowrap; }
 .diff-options {
   gap: 14px;
   flex-wrap: wrap;
@@ -243,6 +306,7 @@ const resultStatus = computed(() => {
   cursor: pointer;
   font-size: var(--fs-xs);
 }
+.secondary-btn:disabled { cursor: not-allowed; opacity: 0.55; }
 .primary-btn {
   color: var(--accent-fg);
   background: var(--accent);

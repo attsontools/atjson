@@ -5,9 +5,18 @@ import CodeEditor from './CodeEditor.vue';
 import JsonTreeView from './JsonTreeView.vue';
 import { useFileDrop } from '../../composables/useFileDrop';
 import { useJsonWorker } from '../../composables/useJsonWorker';
+import { hasWorkspaceInput } from '../../composables/useJsonWorkspaceTabs';
 import type { JsonPathSegment, JsonValue } from '../../types/json';
 import { useJsonHost } from '../../host/context';
 import { deleteJsonNode } from '../../utils/jsonTreeEdit';
+import { downloadText } from '../../utils/textDownload';
+
+const props = defineProps<{ workspaceTitle: string }>();
+
+const emit = defineEmits<{
+  dirtyChange: [dirty: boolean];
+  titleChange: [title: string];
+}>();
 
 const worker = useJsonWorker();
 const host = useJsonHost();
@@ -23,8 +32,10 @@ const hasParsed = ref(false);
 const treeRef = ref<{ expandAll: () => void; collapseAll: () => void } | null>(null);
 const editorRef = ref<{ undo: () => void; redo: () => void } | null>(null);
 const selectedTreeKey = ref<string | null>(null);
+const actionMessage = ref('');
 let parsedSource: string | null = null;
 let textRevision = 0;
+let actionTimer: number | null = null;
 
 const charCount = computed(() => text.value.length);
 
@@ -75,6 +86,7 @@ async function reparse() {
 
 function setText(next: string) {
   text.value = next;
+  emit('dirtyChange', hasWorkspaceInput(next));
   textRevision++;
   selectedTreeKey.value = null;
   parsed.value = null;
@@ -150,15 +162,39 @@ async function deleteTreeNode(path: JsonPathSegment[], parentKey: string) {
 }
 
 async function doCopy() {
+  if (!text.value) return;
   try {
     await host.copy(text.value);
+    showActionMessage('已复制');
   } catch (copyError) {
     error.value = copyError instanceof Error ? copyError.message : String(copyError);
   }
 }
 
+function doSave() {
+  if (!text.value) return;
+  try {
+    const filename = downloadText(text.value, props.workspaceTitle, 'json', 'application/json');
+    showActionMessage(`已生成 ${filename}`);
+  } catch (saveError) {
+    error.value = saveError instanceof Error ? saveError.message : String(saveError);
+  }
+}
+
+function showActionMessage(message: string) {
+  actionMessage.value = message;
+  if (actionTimer !== null) window.clearTimeout(actionTimer);
+  actionTimer = window.setTimeout(() => {
+    actionMessage.value = '';
+    actionTimer = null;
+  }, 1800);
+}
+
 const drop = useFileDrop(
-  (content) => setText(content),
+  (content, filename) => {
+    setText(content);
+    emit('titleChange', filename);
+  },
   { accept: ['json', 'txt'], onError: (m) => { error.value = m; } },
 );
 
@@ -168,7 +204,10 @@ function copyTreePath(path: string, restoreFocus: () => void) {
   }).finally(restoreFocus);
 }
 
-onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer); });
+onBeforeUnmount(() => {
+  if (parseTimer !== null) window.clearTimeout(parseTimer);
+  if (actionTimer !== null) window.clearTimeout(actionTimer);
+});
 </script>
 
 <template>
@@ -177,7 +216,8 @@ onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer)
       <n-button size="small" @click="doFormat">格式化</n-button>
       <n-button size="small" @click="doMinify">最小化</n-button>
       <n-button size="small" @click="doSortKeys">键排序</n-button>
-      <n-button size="small" @click="doCopy">复制</n-button>
+      <n-button size="small" :disabled="!text" @click="doCopy">复制</n-button>
+      <n-button size="small" :disabled="!text" @click="doSave">另存为</n-button>
       <span class="spacer" />
       <n-button size="small" @click="expandAll">全部展开</n-button>
       <n-button size="small" @click="collapseAll">全部折叠</n-button>
@@ -207,6 +247,7 @@ onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer)
     </div>
     <div class="status">
       <span class="err" v-if="error">{{ error }}</span>
+      <span class="success" v-else-if="actionMessage">{{ actionMessage }}</span>
       <span class="meta">字符 {{ charCount }} · 解析 {{ elapsedMs }} ms</span>
     </div>
   </div>
@@ -228,6 +269,7 @@ onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer)
 .empty { color: var(--text-muted); padding: 40px 0; text-align: center; }
 .status { display: flex; justify-content: space-between; font-size: var(--fs-xxs); }
 .status .err { color: var(--error); }
+.status .success { color: var(--success); }
 .status .meta { color: var(--text-muted); }
 @media (max-width: 720px) {
   .split {

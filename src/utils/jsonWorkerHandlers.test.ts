@@ -61,6 +61,12 @@ describe('handleDiff', () => {
     const r = handleDiff('{"a":1}', '{"a":2}', true);
     expect(r.equal).toBe(false);
     expect(r.html && r.html.length > 0).toBe(true);
+    expect(JSON.parse(r.reportText)).toEqual({
+      equal: false,
+      changeCount: 1,
+      left: { a: 1 },
+      right: { a: 2 },
+    });
   });
   it('skips html when not requested', () => {
     const r = handleDiff('{"a":1}', '{"a":2}', false);

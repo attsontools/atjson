@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { NModal } from 'naive-ui';
 import { useJsonWorkspaceTabs } from '../../composables/useJsonWorkspaceTabs';
 import JsonWorkspace from './JsonWorkspace.vue';
 
 const props = defineProps<{ active: boolean }>();
 const workspaces = useJsonWorkspaceTabs();
 const root = ref<HTMLElement | null>(null);
+const pendingCloseId = ref<string | null>(null);
+const editingId = ref<string | null>(null);
+const editingTitle = ref('');
+const pendingCloseTab = computed(() =>
+  workspaces.tabs.value.find((tab) => tab.id === pendingCloseId.value) ?? null,
+);
 
 watch(workspaces.activeTabId, async (id) => {
   await nextTick();
@@ -17,10 +24,40 @@ watch(workspaces.activeTabId, async (id) => {
 function onTabMouseDown(id: string, event: MouseEvent) {
   if (event.button === 1) {
     event.preventDefault();
-    workspaces.closeTab(id);
+    requestClose(id);
   } else if (event.button === 0) {
     workspaces.activateTab(id);
   }
+}
+
+function requestClose(id: string) {
+  if (workspaces.closeTab(id) === 'needs-confirmation') pendingCloseId.value = id;
+}
+
+function confirmClose() {
+  if (pendingCloseId.value) workspaces.closeTab(pendingCloseId.value, true);
+  pendingCloseId.value = null;
+}
+
+function cancelClose() {
+  pendingCloseId.value = null;
+}
+
+async function beginRename(id: string, title: string) {
+  editingId.value = id;
+  editingTitle.value = title;
+  await nextTick();
+  root.value?.querySelector<HTMLInputElement>('.workspace-title-input')?.select();
+}
+
+function commitRename(id: string) {
+  if (editingId.value !== id) return;
+  workspaces.renameTab(id, editingTitle.value);
+  editingId.value = null;
+}
+
+function cancelRename() {
+  editingId.value = null;
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -31,7 +68,7 @@ function onKeydown(event: KeyboardEvent) {
     workspaces.newTab();
   } else if (key === 'w') {
     event.preventDefault();
-    workspaces.closeTab(workspaces.activeTabId.value);
+    requestClose(workspaces.activeTabId.value);
   }
 }
 
@@ -52,16 +89,30 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         :tabindex="tab.id === workspaces.activeTabId.value ? 0 : -1"
         :title="tab.title"
         @mousedown="onTabMouseDown(tab.id, $event)"
+        @dblclick="beginRename(tab.id, tab.title)"
         @keydown.enter="workspaces.activateTab(tab.id)"
         @keydown.space.prevent="workspaces.activateTab(tab.id)"
       >
-        <span class="workspace-title">{{ tab.title }}</span>
+        <span v-if="tab.dirty" class="workspace-dirty" title="未保存" aria-label="未保存" />
+        <input
+          v-if="editingId === tab.id"
+          v-model="editingTitle"
+          class="workspace-title-input"
+          :aria-label="`重命名 ${tab.title}`"
+          @mousedown.stop
+          @click.stop
+          @keydown.stop
+          @keydown.enter.prevent="commitRename(tab.id)"
+          @keydown.esc.prevent="cancelRename"
+          @blur="commitRename(tab.id)"
+        />
+        <span v-else class="workspace-title">{{ tab.title }}</span>
         <button
           type="button"
           class="workspace-close"
           :aria-label="`关闭 ${tab.title}`"
           @mousedown.stop
-          @click.stop="workspaces.closeTab(tab.id)"
+          @click.stop="requestClose(tab.id)"
         >×</button>
       </div>
       <button
@@ -78,8 +129,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         v-for="tab in workspaces.tabs.value"
         v-show="tab.id === workspaces.activeTabId.value"
         :key="tab.id"
+        :title="tab.title"
+        @dirty-change="workspaces.setDirty(tab.id, $event)"
+        @title-change="workspaces.renameTab(tab.id, $event)"
       />
     </div>
+
+    <n-modal :show="!!pendingCloseTab" @mask-click="cancelClose" @esc="cancelClose">
+      <div class="close-dialog" role="dialog" aria-modal="true" aria-labelledby="close-dialog-title">
+        <h3 id="close-dialog-title">关闭“{{ pendingCloseTab?.title }}”？</h3>
+        <p>这个工作页包含未保存内容，关闭后无法恢复。</p>
+        <div class="close-dialog-actions">
+          <button type="button" class="secondary-btn" @click="cancelClose">取消</button>
+          <button type="button" class="danger-btn" @click="confirmClose">仍然关闭</button>
+        </div>
+      </div>
+    </n-modal>
   </div>
 </template>
 
@@ -123,6 +188,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.workspace-dirty {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--warning);
+}
+.workspace-title-input {
+  width: 110px;
+  min-width: 0;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg-base);
+  color: var(--text);
+  font: inherit;
+}
 .workspace-close,
 .workspace-new {
   border: 0;
@@ -148,4 +230,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 }
 .workspace-new:hover { color: var(--text); background: var(--bg-elev); }
 .workspace-content { flex: 1; min-height: 0; padding-top: 8px; }
+.close-dialog {
+  width: min(380px, calc(100vw - 32px));
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-pop);
+  color: var(--text);
+}
+.close-dialog h3 { margin: 0 0 8px; font-size: var(--fs-lg); }
+.close-dialog p { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); }
+.close-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.secondary-btn,
+.danger-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--fs-xs);
+}
+.secondary-btn { border: 1px solid var(--line-strong); background: var(--bg-elev-2); color: var(--text); }
+.danger-btn { border: 1px solid var(--error); background: var(--error); color: var(--bg-base); }
 </style>
