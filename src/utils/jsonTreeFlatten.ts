@@ -1,4 +1,4 @@
-import type { JsonValue } from '../types/json';
+import type { JsonPathSegment, JsonValue } from '../types/json';
 
 export interface FlatNode {
   key: string;
@@ -6,6 +6,7 @@ export interface FlatNode {
   depth: number;
   label: string;
   path: string;
+  pathSegments: JsonPathSegment[];
   kind: 'object' | 'array' | 'primitive';
   size: number;
   primitiveText?: string;
@@ -55,13 +56,14 @@ function makeNode(
   depth: number,
   label: string,
   path: string,
+  pathSegments: JsonPathSegment[],
   value: JsonValue,
   primitiveMax: number,
 ): FlatNode {
   const kind = kindOf(value);
   const size = sizeOf(value, kind);
   const node: FlatNode = {
-    key, parentKey, depth, label, path, kind, size,
+    key, parentKey, depth, label, path, pathSegments, kind, size,
     hasChildren: kind !== 'primitive' && size > 0,
   };
   if (kind === 'primitive') {
@@ -78,6 +80,7 @@ interface Frame {
   depth: number;
   label: string;
   path: string;
+  pathSegments: JsonPathSegment[];
   value: JsonValue;
 }
 
@@ -88,12 +91,29 @@ export function flatten(
 ): FlatNode[] {
   const primitiveMax = opts?.primitiveMax ?? DEFAULT_PRIMITIVE_MAX;
   const out: FlatNode[] = [];
-  const rootFrame: Frame = { key: ROOT_KEY, parentKey: null, depth: 0, label: '', path: ROOT_KEY, value: root };
+  const rootFrame: Frame = {
+    key: ROOT_KEY,
+    parentKey: null,
+    depth: 0,
+    label: '',
+    path: ROOT_KEY,
+    pathSegments: [],
+    value: root,
+  };
   const stack: Frame[] = [rootFrame];
 
   while (stack.length) {
     const f = stack.pop()!;
-    const node = makeNode(f.key, f.parentKey, f.depth, f.label, f.path, f.value, primitiveMax);
+    const node = makeNode(
+      f.key,
+      f.parentKey,
+      f.depth,
+      f.label,
+      f.path,
+      f.pathSegments,
+      f.value,
+      primitiveMax,
+    );
     out.push(node);
     if (node.kind === 'primitive' || !openKeys.has(node.key)) continue;
     if (node.kind === 'array') {
@@ -107,6 +127,7 @@ export function flatten(
           depth: node.depth + 1,
           label: String(i),
           path: `${node.path}[${i}]`,
+          pathSegments: [...f.pathSegments, i],
           value: arr[i],
         });
       }
@@ -123,6 +144,7 @@ export function flatten(
           depth: node.depth + 1,
           label: k,
           path: appendObjectKey(node.path, k),
+          pathSegments: [...f.pathSegments, k],
           value: obj[k],
         });
       }
@@ -134,7 +156,15 @@ export function flatten(
 
 export function allExpandableKeys(root: JsonValue): Set<string> {
   const keys = new Set<string>();
-  const stack: Frame[] = [{ key: ROOT_KEY, parentKey: null, depth: 0, label: '', path: ROOT_KEY, value: root }];
+  const stack: Frame[] = [{
+    key: ROOT_KEY,
+    parentKey: null,
+    depth: 0,
+    label: '',
+    path: ROOT_KEY,
+    pathSegments: [],
+    value: root,
+  }];
   while (stack.length) {
     const f = stack.pop()!;
     const kind = kindOf(f.value);
@@ -145,7 +175,7 @@ export function allExpandableKeys(root: JsonValue): Set<string> {
       for (let i = 0; i < arr.length; i++) {
         stack.push({
           key: `${f.key}[${i}]`, parentKey: f.key, depth: f.depth + 1,
-          label: String(i), path: `${f.path}[${i}]`, value: arr[i],
+          label: String(i), path: `${f.path}[${i}]`, pathSegments: [...f.pathSegments, i], value: arr[i],
         });
       }
     } else {
@@ -154,7 +184,7 @@ export function allExpandableKeys(root: JsonValue): Set<string> {
         const childKey = appendObjectKey(f.key, k);
         stack.push({
           key: childKey, parentKey: f.key, depth: f.depth + 1,
-          label: k, path: appendObjectKey(f.path, k), value: obj[k],
+          label: k, path: appendObjectKey(f.path, k), pathSegments: [...f.pathSegments, k], value: obj[k],
         });
       }
     }

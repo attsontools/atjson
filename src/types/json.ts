@@ -8,6 +8,8 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
+export type JsonPathSegment = string | number;
+
 export interface JsonParseError {
   message: string;
   line?: number;

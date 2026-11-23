@@ -5,8 +5,9 @@ import CodeEditor from './CodeEditor.vue';
 import JsonTreeView from './JsonTreeView.vue';
 import { useFileDrop } from '../../composables/useFileDrop';
 import { useJsonWorker } from '../../composables/useJsonWorker';
-import type { JsonValue } from '../../types/json';
+import type { JsonPathSegment, JsonValue } from '../../types/json';
 import { useJsonHost } from '../../host/context';
+import { deleteJsonNode } from '../../utils/jsonTreeEdit';
 
 const worker = useJsonWorker();
 const host = useJsonHost();
@@ -20,6 +21,7 @@ const elapsedMs = ref(0);
 const parsed = shallowRef<JsonValue | null>(null);
 const hasParsed = ref(false);
 const treeRef = ref<{ expandAll: () => void; collapseAll: () => void } | null>(null);
+const selectedTreeKey = ref<string | null>(null);
 let parsedSource: string | null = null;
 let textRevision = 0;
 
@@ -73,6 +75,7 @@ async function reparse() {
 function setText(next: string) {
   text.value = next;
   textRevision++;
+  selectedTreeKey.value = null;
   parsed.value = null;
   hasParsed.value = false;
   parsedSource = null;
@@ -113,6 +116,38 @@ function doSortKeys() { void doSerialize('sort'); }
 function expandAll()   { treeRef.value?.expandAll(); }
 function collapseAll() { treeRef.value?.collapseAll(); }
 
+async function deleteTreeNode(path: JsonPathSegment[], parentKey: string) {
+  if (!hasParsed.value) return;
+  const result = deleteJsonNode(parsed.value, path);
+  if (!result.ok) return;
+
+  const revision = textRevision;
+  try {
+    const out = await worker.serialize(result.value, 'format', 2, 'format:tree-delete');
+    if (out === null || revision !== textRevision) return;
+    if (!out.ok) {
+      error.value = out.error;
+      return;
+    }
+    if (parseTimer !== null) {
+      window.clearTimeout(parseTimer);
+      parseTimer = null;
+    }
+    selectedTreeKey.value = parentKey;
+    text.value = out.text;
+    textRevision++;
+    parsed.value = result.value;
+    hasParsed.value = true;
+    parsedSource = out.text;
+    error.value = null;
+    elapsedMs.value = out.elapsedMs;
+    void reparse();
+  } catch (deleteError) {
+    if (revision !== textRevision) return;
+    error.value = deleteError instanceof Error ? deleteError.message : String(deleteError);
+  }
+}
+
 async function doCopy() {
   try {
     await host.copy(text.value);
@@ -126,10 +161,10 @@ const drop = useFileDrop(
   { accept: ['json', 'txt'], onError: (m) => { error.value = m; } },
 );
 
-function copyTreePath(path: string) {
+function copyTreePath(path: string, restoreFocus: () => void) {
   host.copy(path).catch((copyError) => {
     error.value = copyError instanceof Error ? copyError.message : String(copyError);
-  });
+  }).finally(restoreFocus);
 }
 
 onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer); });
@@ -150,7 +185,14 @@ onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer)
     <div class="split">
       <CodeEditor :model-value="text" language="json" @update:model-value="setText" height="100%" />
       <div class="tree-pane">
-        <JsonTreeView v-if="hasParsed" ref="treeRef" :value="parsed" @copy-path="copyTreePath" />
+        <JsonTreeView
+          v-if="hasParsed"
+          ref="treeRef"
+          v-model:selected-key="selectedTreeKey"
+          :value="parsed"
+          @copy-path="copyTreePath"
+          @delete-node="deleteTreeNode"
+        />
         <div v-else class="empty">{{ text.trim() ? '等待有效 JSON' : '左侧粘贴 / 拖入 JSON 文本' }}</div>
       </div>
     </div>

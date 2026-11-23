@@ -48,6 +48,23 @@ describe('flatten', () => {
       '$.a.b',
       '$["quote\\"key"]',
     ]);
+    expect(rows.map((row) => row.pathSegments)).toEqual([
+      [],
+      ['a.b'],
+      ['a'],
+      ['a', 'b'],
+      ['quote"key'],
+    ]);
+  });
+
+  it('uses numeric structural path segments for array elements', () => {
+    const rows = flatten({ items: ['first'] }, new Set(['$', '$.items']));
+
+    expect(rows.map((row) => row.pathSegments)).toEqual([
+      [],
+      ['items'],
+      ['items', 0],
+    ]);
   });
 
   it('primitive display picks class', () => {
