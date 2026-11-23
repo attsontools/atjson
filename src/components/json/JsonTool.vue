@@ -2,6 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { NModal } from 'naive-ui';
 import { useJsonWorkspaceTabs } from '../../composables/useJsonWorkspaceTabs';
+import {
+  createJsonHandoffTitle,
+  type JsonWorkspaceSeed,
+} from '../../utils/jsonHandoff';
 import JsonWorkspace from './JsonWorkspace.vue';
 
 const props = defineProps<{ active: boolean }>();
@@ -58,6 +62,15 @@ function commitRename(id: string) {
 
 function cancelRename() {
   editingId.value = null;
+}
+
+async function handleSend(sourceTitle: string, handoff: JsonWorkspaceSeed) {
+  const target = workspaces.newTab({
+    title: createJsonHandoffTitle(sourceTitle, handoff.target),
+    seed: handoff,
+  });
+  await nextTick();
+  workspaces.clearSeed(target.id);
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -130,8 +143,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         v-show="tab.id === workspaces.activeTabId.value"
         :key="tab.id"
         :title="tab.title"
+        :seed="tab.seed"
         @dirty-change="workspaces.setDirty(tab.id, $event)"
         @title-change="workspaces.renameTab(tab.id, $event)"
+        @send-to="handleSend(tab.title, $event)"
       />
     </div>
 

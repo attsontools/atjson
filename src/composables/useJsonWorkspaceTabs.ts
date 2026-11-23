@@ -1,9 +1,16 @@
 import { ref } from 'vue';
+import type { JsonWorkspaceSeed } from '../utils/jsonHandoff';
 
 export interface JsonWorkspaceTab {
   id: string;
   title: string;
   dirty: boolean;
+  seed?: JsonWorkspaceSeed;
+}
+
+export interface NewJsonWorkspaceOptions {
+  title?: string;
+  seed?: JsonWorkspaceSeed;
 }
 
 export type CloseWorkspaceResult = 'closed' | 'needs-confirmation' | 'missing';
@@ -19,13 +26,14 @@ export function useJsonWorkspaceTabs() {
   const activeTabId = ref('json-workspace-1');
   let nextSequence = 2;
 
-  function newTab(): JsonWorkspaceTab {
+  function newTab(options: NewJsonWorkspaceOptions = {}): JsonWorkspaceTab {
     const sequence = nextSequence++;
-    const tab = {
+    const tab: JsonWorkspaceTab = {
       id: `json-workspace-${sequence}`,
-      title: `JSON ${sequence}`,
-      dirty: false,
+      title: options.title?.trim() || `JSON ${sequence}`,
+      dirty: hasWorkspaceInput(options.seed?.text ?? ''),
     };
+    if (options.seed) tab.seed = options.seed;
     tabs.value.push(tab);
     activeTabId.value = tab.id;
     return tab;
@@ -42,6 +50,14 @@ export function useJsonWorkspaceTabs() {
     if (!tab) return false;
     tab.dirty = dirty;
     return true;
+  }
+
+  function clearSeed(id: string): JsonWorkspaceSeed | undefined {
+    const tab = tabs.value.find((item) => item.id === id);
+    if (!tab?.seed) return undefined;
+    const seed = tab.seed;
+    delete tab.seed;
+    return seed;
   }
 
   function renameTab(id: string, title: string): boolean {
@@ -69,5 +85,14 @@ export function useJsonWorkspaceTabs() {
     return 'closed';
   }
 
-  return { tabs, activeTabId, newTab, activateTab, setDirty, renameTab, closeTab };
+  return {
+    tabs,
+    activeTabId,
+    newTab,
+    activateTab,
+    setDirty,
+    clearSeed,
+    renameTab,
+    closeTab,
+  };
 }

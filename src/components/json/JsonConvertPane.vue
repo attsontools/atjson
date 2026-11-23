@@ -9,7 +9,12 @@ import type { ConvertFormat } from '../../types/json';
 import { useJsonHost } from '../../host/context';
 import { downloadText } from '../../utils/textDownload';
 
-const props = defineProps<{ workspaceTitle: string }>();
+const props = withDefaults(defineProps<{
+  workspaceTitle: string;
+  initialSource?: string;
+}>(), {
+  initialSource: '',
+});
 
 const emit = defineEmits<{
   dirtyChange: [dirty: boolean];
@@ -26,7 +31,7 @@ const FORMAT_OPTIONS = [
 const worker = useJsonWorker();
 const host = useJsonHost();
 
-const source = ref('');
+const source = ref(props.initialSource);
 const target = ref('');
 const fromFmt = ref<ConvertFormat>('json');
 const toFmt = ref<ConvertFormat>('yaml');
@@ -71,7 +76,7 @@ async function recompute(run: number) {
   }
 }
 
-watch([source, fromFmt, toFmt], schedule);
+watch([source, fromFmt, toFmt], schedule, { immediate: true });
 onBeforeUnmount(() => {
   if (timer !== null) window.clearTimeout(timer);
   if (actionTimer !== null) window.clearTimeout(actionTimer);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hasWorkspaceInput, useJsonWorkspaceTabs } from './useJsonWorkspaceTabs';
+import type { JsonWorkspaceSeed } from '../utils/jsonHandoff';
 
 describe('hasWorkspaceInput', () => {
   it('treats whitespace-only text as unsaved user input', () => {
@@ -32,6 +33,24 @@ describe('useJsonWorkspaceTabs', () => {
       'JSON 3',
     ]);
     expect(workspaces.activeTabId.value).toBe('json-workspace-3');
+  });
+
+  it('creates a dirty titled workspace from a one-shot seed', () => {
+    const workspaces = useJsonWorkspaceTabs();
+    const seed: JsonWorkspaceSeed = { target: 'query', text: '{"id":1}' };
+
+    const tab = workspaces.newTab({ title: 'order.json · 查询', seed });
+
+    expect(tab).toEqual({
+      id: 'json-workspace-2',
+      title: 'order.json · 查询',
+      dirty: true,
+      seed,
+    });
+    expect(workspaces.activeTabId.value).toBe('json-workspace-2');
+    expect(workspaces.clearSeed(tab.id)).toEqual(seed);
+    expect(tab.seed).toBeUndefined();
+    expect(tab.dirty).toBe(true);
   });
 
   it('activates only existing workspaces', () => {

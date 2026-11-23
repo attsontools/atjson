@@ -9,7 +9,12 @@ import type { JsonValue } from '../../types/json';
 import { useJsonHost } from '../../host/context';
 import { downloadText } from '../../utils/textDownload';
 
-const props = defineProps<{ workspaceTitle: string }>();
+const props = withDefaults(defineProps<{
+  workspaceTitle: string;
+  initialSource?: string;
+}>(), {
+  initialSource: '',
+});
 
 const emit = defineEmits<{
   dirtyChange: [dirty: boolean];
@@ -19,7 +24,7 @@ const emit = defineEmits<{
 const worker = useJsonWorker();
 const host = useJsonHost();
 
-const source = ref('');
+const source = ref(props.initialSource);
 const expression = ref('$');
 const result = ref('');
 const matchCount = ref(0);

@@ -5,16 +5,31 @@ import JsonFormatPane from './JsonFormatPane.vue';
 import JsonQueryPane from './JsonQueryPane.vue';
 import JsonDiffPane from './JsonDiffPane.vue';
 import JsonConvertPane from './JsonConvertPane.vue';
+import { hasWorkspaceInput } from '../../composables/useJsonWorkspaceTabs';
+import {
+  resolveJsonWorkspaceSeed,
+  type JsonWorkspaceSeed,
+} from '../../utils/jsonHandoff';
 
-defineProps<{ title: string }>();
+const props = defineProps<{
+  title: string;
+  seed?: JsonWorkspaceSeed;
+}>();
 
 const emit = defineEmits<{
   dirtyChange: [dirty: boolean];
   titleChange: [title: string];
+  sendTo: [handoff: JsonWorkspaceSeed];
 }>();
 
-const tab = ref('format');
-const paneDirty = reactive({ format: false, query: false, diff: false, convert: false });
+const initial = resolveJsonWorkspaceSeed(props.seed);
+const tab = ref(initial.activePane);
+const paneDirty = reactive({
+  format: hasWorkspaceInput(initial.formatText),
+  query: hasWorkspaceInput(initial.querySource),
+  diff: hasWorkspaceInput(initial.diffLeft, initial.diffRight),
+  convert: hasWorkspaceInput(initial.convertSource),
+});
 
 function setPaneDirty(pane: keyof typeof paneDirty, dirty: boolean) {
   paneDirty[pane] = dirty;
@@ -29,8 +44,10 @@ function setPaneDirty(pane: keyof typeof paneDirty, dirty: boolean) {
         <div class="pane-wrap">
           <JsonFormatPane
             :workspace-title="title"
+            :initial-text="initial.formatText"
             @dirty-change="setPaneDirty('format', $event)"
             @title-change="emit('titleChange', $event)"
+            @send-to="emit('sendTo', $event)"
           />
         </div>
       </n-tab-pane>
@@ -38,6 +55,7 @@ function setPaneDirty(pane: keyof typeof paneDirty, dirty: boolean) {
         <div class="pane-wrap">
           <JsonQueryPane
             :workspace-title="title"
+            :initial-source="initial.querySource"
             @dirty-change="setPaneDirty('query', $event)"
             @title-change="emit('titleChange', $event)"
           />
@@ -47,6 +65,8 @@ function setPaneDirty(pane: keyof typeof paneDirty, dirty: boolean) {
         <div class="pane-wrap">
           <JsonDiffPane
             :workspace-title="title"
+            :initial-left="initial.diffLeft"
+            :initial-right="initial.diffRight"
             @dirty-change="setPaneDirty('diff', $event)"
           />
         </div>
@@ -55,6 +75,7 @@ function setPaneDirty(pane: keyof typeof paneDirty, dirty: boolean) {
         <div class="pane-wrap">
           <JsonConvertPane
             :workspace-title="title"
+            :initial-source="initial.convertSource"
             @dirty-change="setPaneDirty('convert', $event)"
             @title-change="emit('titleChange', $event)"
           />

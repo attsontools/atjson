@@ -8,14 +8,21 @@ import { hasWorkspaceInput } from '../../composables/useJsonWorkspaceTabs';
 import { useJsonHost } from '../../host/context';
 import { downloadText } from '../../utils/textDownload';
 
-const props = defineProps<{ workspaceTitle: string }>();
+const props = withDefaults(defineProps<{
+  workspaceTitle: string;
+  initialLeft?: string;
+  initialRight?: string;
+}>(), {
+  initialLeft: '',
+  initialRight: '',
+});
 const emit = defineEmits<{ dirtyChange: [dirty: boolean] }>();
 
 const worker = useJsonWorker();
 const host = useJsonHost();
 
-const left = ref('');
-const right = ref('');
+const left = ref(props.initialLeft);
+const right = ref(props.initialRight);
 const leftError = ref<string | null>(null);
 const rightError = ref<string | null>(null);
 const viewMode = ref<'input' | 'result'>('input');

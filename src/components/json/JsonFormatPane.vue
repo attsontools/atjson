@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef } from 'vue';
-import { NButton } from 'naive-ui';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
+import { NButton, NDropdown } from 'naive-ui';
 import CodeEditor from './CodeEditor.vue';
 import JsonTreeView from './JsonTreeView.vue';
 import { useFileDrop } from '../../composables/useFileDrop';
@@ -10,18 +10,25 @@ import type { JsonPathSegment, JsonValue } from '../../types/json';
 import { useJsonHost } from '../../host/context';
 import { deleteJsonNode } from '../../utils/jsonTreeEdit';
 import { downloadText } from '../../utils/textDownload';
+import type { JsonHandoffTarget, JsonWorkspaceSeed } from '../../utils/jsonHandoff';
 
-const props = defineProps<{ workspaceTitle: string }>();
+const props = withDefaults(defineProps<{
+  workspaceTitle: string;
+  initialText?: string;
+}>(), {
+  initialText: '',
+});
 
 const emit = defineEmits<{
   dirtyChange: [dirty: boolean];
   titleChange: [title: string];
+  sendTo: [handoff: JsonWorkspaceSeed];
 }>();
 
 const worker = useJsonWorker();
 const host = useJsonHost();
 
-const text = ref('');
+const text = ref(props.initialText);
 const error = ref<string | null>(null);
 const elapsedMs = ref(0);
 // shallowRef: parsed JSON can be large and is always replaced wholesale (never
@@ -38,6 +45,17 @@ let textRevision = 0;
 let actionTimer: number | null = null;
 
 const charCount = computed(() => text.value.length);
+const canSend = computed(() => (
+  hasParsed.value && parsedSource === text.value && !!text.value.trim()
+));
+
+const SEND_OPTIONS: Array<{ label: string; key: JsonHandoffTarget }> = [
+  { label: '新工作页', key: 'format' },
+  { label: '查询', key: 'query' },
+  { label: '对比左侧', key: 'diff-left' },
+  { label: '对比右侧', key: 'diff-right' },
+  { label: '转换', key: 'convert' },
+];
 
 let parseTimer: number | null = null;
 function scheduleReparse() {
@@ -181,6 +199,11 @@ function doSave() {
   }
 }
 
+function sendTo(target: string | number) {
+  if (!canSend.value) return;
+  emit('sendTo', { target: target as JsonHandoffTarget, text: text.value });
+}
+
 function showActionMessage(message: string) {
   actionMessage.value = message;
   if (actionTimer !== null) window.clearTimeout(actionTimer);
@@ -197,6 +220,10 @@ const drop = useFileDrop(
   },
   { accept: ['json', 'txt'], onError: (m) => { error.value = m; } },
 );
+
+onMounted(() => {
+  if (text.value) scheduleReparse();
+});
 
 function copyTreePath(path: string, restoreFocus: () => void) {
   host.copy(path).catch((copyError) => {
@@ -218,6 +245,9 @@ onBeforeUnmount(() => {
       <n-button size="small" @click="doSortKeys">键排序</n-button>
       <n-button size="small" :disabled="!text" @click="doCopy">复制</n-button>
       <n-button size="small" :disabled="!text" @click="doSave">另存为</n-button>
+      <n-dropdown trigger="click" :options="SEND_OPTIONS" @select="sendTo">
+        <n-button size="small" :disabled="!canSend">发送到</n-button>
+      </n-dropdown>
       <span class="spacer" />
       <n-button size="small" @click="expandAll">全部展开</n-button>
       <n-button size="small" @click="collapseAll">全部折叠</n-button>
