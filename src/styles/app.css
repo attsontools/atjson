@@ -17,6 +17,10 @@ body,
   color: var(--text);
 }
 
+.app-shell.is-plugin {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .app-header {
   min-width: 0;
   display: flex;
@@ -109,6 +113,7 @@ body,
 
 @media (max-width: 720px) {
   .app-shell { grid-template-rows: 52px minmax(0, 1fr); }
+  .app-shell.is-plugin { grid-template-rows: minmax(0, 1fr); }
   .app-header { padding: 0 12px; }
   .brand-copy span,
   .host-badge { display: none; }

@@ -1,25 +1,41 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, ref } from 'vue';
 import { NButton, NInput } from 'naive-ui';
 import CodeEditor from './CodeEditor.vue';
 import { useFileDrop } from '../../composables/useFileDrop';
 import { useJsonWorker } from '../../composables/useJsonWorker';
+import { hasWorkspaceInput } from '../../composables/useJsonWorkspaceTabs';
 import type { JsonValue } from '../../types/json';
 import { useJsonHost } from '../../host/context';
+import { downloadText } from '../../utils/textDownload';
+
+const props = withDefaults(defineProps<{
+  workspaceTitle: string;
+  initialSource?: string;
+}>(), {
+  initialSource: '',
+});
+
+const emit = defineEmits<{
+  dirtyChange: [dirty: boolean];
+  titleChange: [title: string];
+}>();
 
 const worker = useJsonWorker();
 const host = useJsonHost();
 
-const source = ref('');
+const source = ref(props.initialSource);
 const expression = ref('$');
 const result = ref('');
 const matchCount = ref(0);
 const elapsedMs = ref(0);
 const error = ref<string | null>(null);
+const actionMessage = ref('');
 
 let cachedSource = '';
 let cachedParsed: JsonValue | null = null;
 let executeRun = 0;
+let actionTimer: number | null = null;
 
 async function execute() {
   const run = ++executeRun;
@@ -37,6 +53,9 @@ async function execute() {
       if (p === null || run !== executeRun || source.value !== sourceText) return;
       if (p.error) {
         error.value = `源 JSON 解析失败：${p.error.message ?? ''}`;
+        result.value = '';
+        matchCount.value = 0;
+        elapsedMs.value = 0;
         return;
       }
       cachedSource = sourceText;
@@ -58,18 +77,47 @@ async function execute() {
 
 function setSource(next: string) {
   source.value = next;
+  emit('dirtyChange', hasWorkspaceInput(next));
   cachedSource = '';
   cachedParsed = null;
   executeRun++;
+  result.value = '';
+  matchCount.value = 0;
+  elapsedMs.value = 0;
 }
 
 async function copy() {
   if (!result.value) return;
   try {
     await host.copy(result.value);
+    showActionMessage('已复制结果');
   } catch (copyError) {
     error.value = copyError instanceof Error ? copyError.message : String(copyError);
   }
+}
+
+function saveResult() {
+  if (!result.value) return;
+  try {
+    const filename = downloadText(
+      result.value,
+      `${props.workspaceTitle}-query`,
+      'json',
+      'application/json',
+    );
+    showActionMessage(`已生成 ${filename}`);
+  } catch (saveError) {
+    error.value = saveError instanceof Error ? saveError.message : String(saveError);
+  }
+}
+
+function showActionMessage(message: string) {
+  actionMessage.value = message;
+  if (actionTimer !== null) window.clearTimeout(actionTimer);
+  actionTimer = window.setTimeout(() => {
+    actionMessage.value = '';
+    actionTimer = null;
+  }, 1800);
 }
 
 function onExprKeydown(event: KeyboardEvent) {
@@ -80,9 +128,16 @@ function onExprKeydown(event: KeyboardEvent) {
 }
 
 const drop = useFileDrop(
-  (content) => setSource(content),
+  (content, filename) => {
+    setSource(content);
+    emit('titleChange', filename);
+  },
   { accept: ['json', 'txt'], onError: (m) => { error.value = m; } },
 );
+
+onBeforeUnmount(() => {
+  if (actionTimer !== null) window.clearTimeout(actionTimer);
+});
 </script>
 
 <template>
@@ -95,7 +150,8 @@ const drop = useFileDrop(
         @keydown="onExprKeydown"
       />
       <n-button type="primary" size="small" @click="execute">执行 (⌘↵)</n-button>
-      <n-button size="small" @click="copy">复制结果</n-button>
+      <n-button size="small" :disabled="!result" @click="copy">复制结果</n-button>
+      <n-button size="small" :disabled="!result" @click="saveResult">另存为</n-button>
       <n-button size="small" @click="drop.openFile">打开</n-button>
     </div>
     <div class="split">
@@ -104,6 +160,7 @@ const drop = useFileDrop(
     </div>
     <div class="status">
       <span class="err" v-if="error">{{ error }}</span>
+      <span class="success" v-else-if="actionMessage">{{ actionMessage }}</span>
       <span class="meta">{{ matchCount }} 条匹配 · {{ elapsedMs }} ms</span>
     </div>
   </div>
@@ -116,6 +173,7 @@ const drop = useFileDrop(
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
 .status { display: flex; justify-content: space-between; font-size: var(--fs-xxs); }
 .status .err { color: var(--error); }
+.status .success { color: var(--success); }
 .status .meta { color: var(--text-muted); }
 @media (max-width: 720px) {
   .expr-row { flex-wrap: wrap; }

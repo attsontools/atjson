@@ -6,3 +6,13 @@ artifacts/
 src-tauri/target/
 src-tauri/gen/
 
+# AI workflow artifacts
+docs/tasks/
+.workflow-plan/
+docs/brainstorm/drafts/
+docs/brainstorm/notes/
+docs/superpowers/
+.claude/settings.local.json
+*.local
+*.local.*
+

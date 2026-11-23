@@ -81,6 +81,7 @@ export function handleDiff(
   changeCount: number;
   leftText: string;
   rightText: string;
+  reportText: string;
   html: string | null;
   elapsedMs: number;
   leftError?: string;
@@ -94,6 +95,7 @@ export function handleDiff(
     changeCount: 0,
     leftText: '',
     rightText: '',
+    reportText: '',
     html: null as string | null,
     leftError: r.leftError,
     rightError: r.rightError,
@@ -107,6 +109,7 @@ export function handleDiff(
     result.equal = true;
     result.leftText = r.leftText;
     result.rightText = r.rightText;
+    result.reportText = createDiffReport(true, 0, r.leftText, r.rightText);
     result.elapsedMs = Math.round(performance.now() - start);
     return result;
   }
@@ -115,9 +118,24 @@ export function handleDiff(
   result.changeCount = r.changeCount;
   result.leftText = r.leftText;
   result.rightText = r.rightText;
+  result.reportText = createDiffReport(false, r.changeCount, r.leftText, r.rightText);
   if (withHtml) result.html = diffJsonHtml(r.leftText, r.rightText);
   result.elapsedMs = Math.round(performance.now() - start);
   return result;
+}
+
+function createDiffReport(
+  equal: boolean,
+  changeCount: number,
+  leftText: string,
+  rightText: string,
+): string {
+  return JSON.stringify({
+    equal,
+    changeCount,
+    left: JSON.parse(leftText),
+    right: JSON.parse(rightText),
+  }, null, 2);
 }
 
 export function handleConvert(

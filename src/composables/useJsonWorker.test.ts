@@ -147,6 +147,7 @@ describe('createJsonWorkerClient', () => {
       changeCount: 0,
       leftText: '{}',
       rightText: '{}',
+      reportText: '{"equal":true,"changeCount":0,"left":{},"right":{}}',
       html: null,
       elapsedMs: 1,
     });

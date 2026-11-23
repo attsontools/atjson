@@ -1,17 +1,34 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef } from 'vue';
-import { NButton } from 'naive-ui';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
+import { NButton, NDropdown } from 'naive-ui';
 import CodeEditor from './CodeEditor.vue';
 import JsonTreeView from './JsonTreeView.vue';
 import { useFileDrop } from '../../composables/useFileDrop';
 import { useJsonWorker } from '../../composables/useJsonWorker';
-import type { JsonValue } from '../../types/json';
+import { hasWorkspaceInput } from '../../composables/useJsonWorkspaceTabs';
+import type { JsonPathSegment, JsonValue } from '../../types/json';
 import { useJsonHost } from '../../host/context';
+import { deleteJsonNode } from '../../utils/jsonTreeEdit';
+import { downloadText } from '../../utils/textDownload';
+import type { JsonHandoffTarget, JsonWorkspaceSeed } from '../../utils/jsonHandoff';
+
+const props = withDefaults(defineProps<{
+  workspaceTitle: string;
+  initialText?: string;
+}>(), {
+  initialText: '',
+});
+
+const emit = defineEmits<{
+  dirtyChange: [dirty: boolean];
+  titleChange: [title: string];
+  sendTo: [handoff: JsonWorkspaceSeed];
+}>();
 
 const worker = useJsonWorker();
 const host = useJsonHost();
 
-const text = ref('');
+const text = ref(props.initialText);
 const error = ref<string | null>(null);
 const elapsedMs = ref(0);
 // shallowRef: parsed JSON can be large and is always replaced wholesale (never
@@ -20,10 +37,25 @@ const elapsedMs = ref(0);
 const parsed = shallowRef<JsonValue | null>(null);
 const hasParsed = ref(false);
 const treeRef = ref<{ expandAll: () => void; collapseAll: () => void } | null>(null);
+const editorRef = ref<{ undo: () => void; redo: () => void } | null>(null);
+const selectedTreeKey = ref<string | null>(null);
+const actionMessage = ref('');
 let parsedSource: string | null = null;
 let textRevision = 0;
+let actionTimer: number | null = null;
 
 const charCount = computed(() => text.value.length);
+const canSend = computed(() => (
+  hasParsed.value && parsedSource === text.value && !!text.value.trim()
+));
+
+const SEND_OPTIONS: Array<{ label: string; key: JsonHandoffTarget }> = [
+  { label: '新工作页', key: 'format' },
+  { label: '查询', key: 'query' },
+  { label: '对比左侧', key: 'diff-left' },
+  { label: '对比右侧', key: 'diff-right' },
+  { label: '转换', key: 'convert' },
+];
 
 let parseTimer: number | null = null;
 function scheduleReparse() {
@@ -72,7 +104,9 @@ async function reparse() {
 
 function setText(next: string) {
   text.value = next;
+  emit('dirtyChange', hasWorkspaceInput(next));
   textRevision++;
+  selectedTreeKey.value = null;
   parsed.value = null;
   hasParsed.value = false;
   parsedSource = null;
@@ -113,26 +147,94 @@ function doSortKeys() { void doSerialize('sort'); }
 function expandAll()   { treeRef.value?.expandAll(); }
 function collapseAll() { treeRef.value?.collapseAll(); }
 
+async function deleteTreeNode(path: JsonPathSegment[], parentKey: string) {
+  if (!hasParsed.value) return;
+  const result = deleteJsonNode(parsed.value, path);
+  if (!result.ok) return;
+
+  const revision = textRevision;
+  try {
+    const out = await worker.serialize(result.value, 'format', 2, 'format:tree-delete');
+    if (out === null || revision !== textRevision) return;
+    if (!out.ok) {
+      error.value = out.error;
+      return;
+    }
+    if (parseTimer !== null) {
+      window.clearTimeout(parseTimer);
+      parseTimer = null;
+    }
+    selectedTreeKey.value = parentKey;
+    text.value = out.text;
+    textRevision++;
+    parsed.value = result.value;
+    hasParsed.value = true;
+    parsedSource = out.text;
+    error.value = null;
+    elapsedMs.value = out.elapsedMs;
+    void reparse();
+  } catch (deleteError) {
+    if (revision !== textRevision) return;
+    error.value = deleteError instanceof Error ? deleteError.message : String(deleteError);
+  }
+}
+
 async function doCopy() {
+  if (!text.value) return;
   try {
     await host.copy(text.value);
+    showActionMessage('已复制');
   } catch (copyError) {
     error.value = copyError instanceof Error ? copyError.message : String(copyError);
   }
 }
 
+function doSave() {
+  if (!text.value) return;
+  try {
+    const filename = downloadText(text.value, props.workspaceTitle, 'json', 'application/json');
+    showActionMessage(`已生成 ${filename}`);
+  } catch (saveError) {
+    error.value = saveError instanceof Error ? saveError.message : String(saveError);
+  }
+}
+
+function sendTo(target: string | number) {
+  if (!canSend.value) return;
+  emit('sendTo', { target: target as JsonHandoffTarget, text: text.value });
+}
+
+function showActionMessage(message: string) {
+  actionMessage.value = message;
+  if (actionTimer !== null) window.clearTimeout(actionTimer);
+  actionTimer = window.setTimeout(() => {
+    actionMessage.value = '';
+    actionTimer = null;
+  }, 1800);
+}
+
 const drop = useFileDrop(
-  (content) => setText(content),
+  (content, filename) => {
+    setText(content);
+    emit('titleChange', filename);
+  },
   { accept: ['json', 'txt'], onError: (m) => { error.value = m; } },
 );
 
-function copyTreePath(path: string) {
+onMounted(() => {
+  if (text.value) scheduleReparse();
+});
+
+function copyTreePath(path: string, restoreFocus: () => void) {
   host.copy(path).catch((copyError) => {
     error.value = copyError instanceof Error ? copyError.message : String(copyError);
-  });
+  }).finally(restoreFocus);
 }
 
-onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer); });
+onBeforeUnmount(() => {
+  if (parseTimer !== null) window.clearTimeout(parseTimer);
+  if (actionTimer !== null) window.clearTimeout(actionTimer);
+});
 </script>
 
 <template>
@@ -141,21 +243,41 @@ onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer)
       <n-button size="small" @click="doFormat">格式化</n-button>
       <n-button size="small" @click="doMinify">最小化</n-button>
       <n-button size="small" @click="doSortKeys">键排序</n-button>
-      <n-button size="small" @click="doCopy">复制</n-button>
+      <n-button size="small" :disabled="!text" @click="doCopy">复制</n-button>
+      <n-button size="small" :disabled="!text" @click="doSave">另存为</n-button>
+      <n-dropdown trigger="click" :options="SEND_OPTIONS" @select="sendTo">
+        <n-button size="small" :disabled="!canSend">发送到</n-button>
+      </n-dropdown>
       <span class="spacer" />
       <n-button size="small" @click="expandAll">全部展开</n-button>
       <n-button size="small" @click="collapseAll">全部折叠</n-button>
       <n-button size="small" @click="drop.openFile">打开文件</n-button>
     </div>
     <div class="split">
-      <CodeEditor :model-value="text" language="json" @update:model-value="setText" height="100%" />
+      <CodeEditor
+        ref="editorRef"
+        :model-value="text"
+        language="json"
+        height="100%"
+        @update:model-value="setText"
+      />
       <div class="tree-pane">
-        <JsonTreeView v-if="hasParsed" ref="treeRef" :value="parsed" @copy-path="copyTreePath" />
+        <JsonTreeView
+          v-if="hasParsed"
+          ref="treeRef"
+          v-model:selected-key="selectedTreeKey"
+          :value="parsed"
+          @copy-path="copyTreePath"
+          @delete-node="deleteTreeNode"
+          @undo="editorRef?.undo()"
+          @redo="editorRef?.redo()"
+        />
         <div v-else class="empty">{{ text.trim() ? '等待有效 JSON' : '左侧粘贴 / 拖入 JSON 文本' }}</div>
       </div>
     </div>
     <div class="status">
       <span class="err" v-if="error">{{ error }}</span>
+      <span class="success" v-else-if="actionMessage">{{ actionMessage }}</span>
       <span class="meta">字符 {{ charCount }} · 解析 {{ elapsedMs }} ms</span>
     </div>
   </div>
@@ -177,6 +299,7 @@ onBeforeUnmount(() => { if (parseTimer !== null) window.clearTimeout(parseTimer)
 .empty { color: var(--text-muted); padding: 40px 0; text-align: center; }
 .status { display: flex; justify-content: space-between; font-size: var(--fs-xxs); }
 .status .err { color: var(--error); }
+.status .success { color: var(--success); }
 .status .meta { color: var(--text-muted); }
 @media (max-width: 720px) {
   .split {
