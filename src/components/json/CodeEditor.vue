@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { loadMonaco } from '../../composables/useMonacoLoader';
 import type { editor as MonacoEditor } from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { watchMonacoTheme, type MonacoThemeName } from '../../theme/monacoTheme';
+import { handlePlainTextPaste } from '../../utils/editorPaste';
 
 const LARGE_INPUT = 1_000_000;
 const LONG_LINE = 50_000;
@@ -60,6 +61,7 @@ let suppress = false;
 let lastResolvedLen = 0;
 let stopWatchingTheme: (() => void) | null = null;
 let unmounted = false;
+let pasteContainer: HTMLDivElement | null = null;
 const RESOLVE_LEN_DELTA = 16_384;
 
 function maybeResolve(editor: MonacoEditor.IStandaloneCodeEditor, value: string) {
@@ -70,8 +72,23 @@ function maybeResolve(editor: MonacoEditor.IStandaloneCodeEditor, value: string)
   }
 }
 
+function onPaste(event: ClipboardEvent) {
+  const editor = instance.value;
+  if (!editor || props.readonly) return;
+  handlePlainTextPaste(event, (text) => {
+    editor.trigger('keyboard', 'paste', {
+      text,
+      pasteOnNewLine: false,
+      multicursorText: null,
+      mode: null,
+    });
+  });
+}
+
 onMounted(async () => {
   if (!container.value) return;
+  pasteContainer = container.value;
+  pasteContainer.addEventListener('paste', onPaste, true);
   const monaco = await loadMonaco();
   if (unmounted || !container.value) return;
   let initialTheme: MonacoThemeName = 'vs-dark';
@@ -140,6 +157,8 @@ watch(
 
 onBeforeUnmount(() => {
   unmounted = true;
+  pasteContainer?.removeEventListener('paste', onPaste, true);
+  pasteContainer = null;
   stopWatchingTheme?.();
   stopWatchingTheme = null;
   instance.value?.dispose();
